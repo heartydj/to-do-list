@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Productivity Hub</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: linear-gradient(135deg, #6366f1, #8b5cf6, #ec4899);
+  --card: rgba(255,255,255,0.9);
+  --text: #111;
+}
+
+body.dark {
+  --bg: #0f172a;
+  --card: rgba(30,41,59,0.9);
+  --text: #f1f5f9;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  margin: 0;
+  color: var(--text);
+}
+
+.container {
+  max-width: 800px;
+  margin: auto;
+  padding: 20px;
+}
+
+header {
+  text-align: center;
+}
+
+header h1 {
+  font-size: 3rem;
+  color: white;
+}
+
+.toggle {
+  position: fixed;
+  right: 20px;
+  top: 20px;
+  cursor: pointer;
+  background: white;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.card, .task, .task-input {
+  backdrop-filter: blur(12px);
+  background: var(--card);
+  border-radius: 16px;
+}
+
+.stats {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.card {
+  flex: 1;
+  padding: 20px;
+  text-align: center;
+}
+
+.progress-bar {
+  height: 8px;
+  background: #ddd;
+  border-radius: 10px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, #22c55e, #4f46e5);
+  border-radius: 10px;
+  transition: width 0.4s;
+}
+
+.task-input {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  margin: 20px 0;
+}
+
+.task-input input, .task-input select {
+  padding: 10px;
+  border-radius: 10px;
+  border: none;
+}
+
+.task-input input[type="text"] {
+  flex: 1;
+}
+
+.task-input button {
+  background: #6366f1;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.task {
+  padding: 15px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: grab;
+}
+
+.task.completed {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.task.low { border-left: 5px solid green; }
+.task.medium { border-left: 5px solid orange; }
+.task.high { border-left: 5px solid red; }
+
+small {
+  display: block;
+  opacity: 0.7;
+}
+</style>
+</head>
+
+<body>
+
+<div class="toggle" onclick="toggleDark()">🌙</div>
+
+<div class="container">
+
+<header>
+<h1>Productivity Hub</h1>
+<p>Stay focused ✨</p>
+</header>
+
+<div class="stats">
+<div class="card" id="totalTasks">Tasks: 0</div>
+<div class="card" id="completedTasks">Done: 0</div>
+<div class="card" id="progress">0%</div>
+</div>
+
+<div class="progress-bar">
+<div id="progressFill" class="progress-fill"></div>
+</div>
+
+<div class="task-input">
+<input id="taskInput" placeholder="Add task...">
+<select id="priority">
+<option value="low">Low</option>
+<option value="medium">Medium</option>
+<option value="high">High</option>
+</select>
+<input type="datetime-local" id="deadline">
+<button onclick="addTask()">Add</button>
+</div>
+
+<div id="taskList"></div>
+
+</div>
+
+<script>
+let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+let draggedIndex = null;
+
+const priorityWeight = { high:3, medium:2, low:1 };
+
+// DARK MODE
+function toggleDark() {
+  document.body.classList.toggle("dark");
+  localStorage.setItem("dark", document.body.classList.contains("dark"));
+}
+if (localStorage.getItem("dark")==="true") {
+  document.body.classList.add("dark");
+}
+
+// SAVE
+function save() {
+  localStorage.setItem("tasks", JSON.stringify(tasks));
+}
+
+// ADD TASK
+function addTask() {
+  const text = document.getElementById("taskInput").value;
+  const priority = document.getElementById("priority").value;
+  const deadline = document.getElementById("deadline").value;
+
+  if (!text.trim()) return;
+
+  tasks.push({
+    text,
+    priority,
+    deadline: deadline ? new Date(deadline).getTime() : null,
+    completed: false,
+    alerted: false
+  });
+
+  save();
+  render();
+}
+
+// TOGGLE
+function toggleTask(i) {
+  tasks[i].completed = !tasks[i].completed;
+  save();
+  render();
+}
+
+// DELETE
+function deleteTask(i) {
+  tasks.splice(i,1);
+  save();
+  render();
+}
+
+// DRAG
+function dragStart(i){ draggedIndex=i; }
+function dragOver(e){ e.preventDefault(); }
+function drop(i){
+  const item = tasks.splice(draggedIndex,1)[0];
+  tasks.splice(i,0,item);
+  save();
+  render();
+}
+
+// SORT
+function sortTasks(arr){
+  return arr.sort((a,b)=>{
+    if(priorityWeight[b.priority]!==priorityWeight[a.priority]){
+      return priorityWeight[b.priority]-priorityWeight[a.priority];
+    }
+    if(a.deadline && b.deadline){
+      return a.deadline-b.deadline;
+    }
+    return 0;
+  });
+}
+
+// TIME LEFT
+function getTimeLeft(deadline){
+  const diff = deadline - Date.now();
+  if(diff<=0) return "Overdue";
+
+  const mins = Math.floor(diff/60000);
+  const hrs = Math.floor(mins/60);
+
+  return hrs>0 ? `${hrs}h ${mins%60}m left` : `${mins}m left`;
+}
+
+// REMINDER
+function checkReminders(){
+  tasks.forEach(t=>{
+    if(t.deadline && !t.completed && Date.now()>t.deadline && !t.alerted){
+      alert("⏰ Task overdue: " + t.text);
+      t.alerted = true;
+      save();
+    }
+  });
+}
+
+// RENDER
+function render(){
+  const list = document.getElementById("taskList");
+  list.innerHTML="";
+
+  const sorted = sortTasks([...tasks]);
+
+  sorted.forEach((t,i)=>{
+    const div = document.createElement("div");
+    div.className = `task ${t.priority} ${t.completed?'completed':''}`;
+    div.draggable = true;
+
+    if(t.deadline && Date.now()>t.deadline){
+      div.style.borderLeft="5px solid red";
+    }
+
+    div.ondragstart=()=>dragStart(i);
+    div.ondragover=dragOver;
+    div.ondrop=()=>drop(i);
+
+    div.innerHTML = `
+      <div>
+        <span onclick="toggleTask(${i})">${t.text}</span>
+        <small>${t.deadline ? getTimeLeft(t.deadline) : ""}</small>
+      </div>
+      <button onclick="deleteTask(${i})">🗑</button>
+    `;
+
+    list.appendChild(div);
+  });
+
+  updateStats();
+}
+
+// STATS
+function updateStats(){
+  const total = tasks.length;
+  const completed = tasks.filter(t=>t.completed).length;
+  const progress = total?Math.round(completed/total*100):0;
+
+  document.getElementById("totalTasks").textContent = "Tasks: "+total;
+  document.getElementById("completedTasks").textContent = "Done: "+completed;
+  document.getElementById("progress").textContent = progress+"%";
+  document.getElementById("progressFill").style.width = progress+"%";
+}
+
+// RUN
+setInterval(checkReminders,30000);
+render();
+</script>
+
+</body>
+</html>
